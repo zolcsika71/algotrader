@@ -4,6 +4,7 @@ algotrader
 import abc
 import os
 import warnings
+from abc import ABC
 import openai
 import yfinance as yf
 import pandas as pd
@@ -56,70 +57,76 @@ class StockAPI(abc.ABC):
         pass
 
 
-class YFinanceAPI(StockAPI):
+class BaseStockAPI(StockAPI, ABC):
+    """
+    BaseStockAPI class that implements common methods for YFActions and YFinanceAPI
+    """
+
     def __init__(self):
         super().__init__()
         self.organized_actions = None
-        self.ignore_warnings()
-        self.current_ticker_symbol = None  # Add an instance variable for the ticker symbol
-
-    @staticmethod
-    def ignore_warnings():
-        """
-        Ignore warnings from libraries
-        """
-        warnings.filterwarnings("ignore", category=FutureWarning)
+        self.current_ticker_symbol = None
 
     def print_formatted_stock_actions(self, actions_df):
         """
-        Print formatted stock actions
-        :param actions_df:
+        Prints the stock actions once they've been formatted.
         """
-        if self.current_ticker_symbol:  # Check if the ticker symbol is set
+        if self.current_ticker_symbol:
             print(f"Ticker: {self.current_ticker_symbol}")
         actions_df = actions_df[['type', 'date', 'value']]
         print(actions_df)
 
-    @staticmethod
-    def init_and_add_stock_records(organized_actions, actions_df):
-        """
-        Initialize and add stock records
-        :param organized_actions:
-        :param actions_df:
-        :return:
-        """
-        for action_type, records in organized_actions.items():
-            temp_df = pd.DataFrame(records)
-            temp_df['type'] = action_type
-            actions_df = pd.concat([actions_df, temp_df], ignore_index=True)
-        return actions_df
-
     def get_organized_stock_actions(self, ticker_symbol: str):
         """
-        Get organised stock actions
-        :param ticker_symbol:
-        :return:
+        Organizes the stock actions based.
         """
         actions = ticker_symbol.actions
         if actions.empty:
             return None
-        self.organized_actions = {}  # Use self to make it an instance variable
+        self.organized_actions = {}
         for index, row in actions.iterrows():
             for col_name in actions.columns:
                 if action_value := row[col_name]:
                     self.organized_actions.setdefault(col_name, []).append({'date': index.strftime('%Y-%m-%d'), 'value': action_value})
         return self.organized_actions or None
 
-    def fetch_and_format_stock_info(self, ticker_symbol):
-        print(f"Ticker: {ticker_symbol}")  # print ticker name here
+    def create_stock_records_df(self, actions_df):
+        """
+        Creates a DataFrame to hold all the stock records.
+        """
+        for action_type, records in self.organized_actions.items():
+            temp_df = pd.DataFrame(records)
+            temp_df['type'] = action_type
+            actions_df = pd.concat([actions_df, temp_df], ignore_index=True)
+        return actions_df
+
+
+class YFActions(BaseStockAPI):
+    """
+    YFActions class to fetch and format stock Dividends and Stock Splits from yfinance.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.ignore_warnings()
+
+    @staticmethod
+    def ignore_warnings():
+        """
+        Method to ignore any warnings that might occur while fetching the stock data.
+        """
+        warnings.filterwarnings("ignore", category=FutureWarning)
+
+    def fetch_and_format_stock_info(self, ticker_symbol: str):
+        print(f"Ticker: {ticker_symbol}")
         ticker = yf.Ticker(ticker_symbol)
         self.handle_stock_actions(ticker, ticker_symbol)
 
     def handle_stock_actions(self, ticker, ticker_symbol):
         """
-        Handle stock actions
+        Handles the stock actions for the provided ticker.
         :param ticker:
-        :param ticker_symbol
+        :param ticker_symbol:
         """
         if self.get_organized_stock_actions(ticker):
             actions_df = self.create_stock_records_df(pd.DataFrame())
@@ -128,17 +135,25 @@ class YFinanceAPI(StockAPI):
         else:
             print(f"No actions found for ticker {ticker_symbol}.")
 
-    def create_stock_records_df(self, actions_df):
+
+class YFinanceAPI(BaseStockAPI):
+    def __init__(self, ticker: str = None):
+        super().__init__()
+        self.ticker_symbol = ticker
+        self.yf_actions = YFActions()
+
+    def fetch_and_format_stock_info(self, ticker_symbol: str):
         """
-        Create stock records dataframe
-        :param actions_df:
-        :return:
+        Fetch and format stock information using YFActions.
         """
-        for action_type, records in self.organized_actions.items():
-            temp_df = pd.DataFrame(records)
-            temp_df['type'] = action_type
-            actions_df = pd.concat([actions_df, temp_df], ignore_index=True)
-        return actions_df
+        print(f"Fetching and formatting stock information for {ticker_symbol}")
+        self.yf_actions.fetch_and_format_stock_info(ticker_symbol)
+
+    def run(self):
+        """
+        Run the YFinanceAPI to fetch and format stock information.
+        """
+        self.fetch_and_format_stock_info(self.ticker_symbol)
 
 
 class PortfolioManager:
@@ -157,19 +172,22 @@ class PortfolioManager:
 
     def load_portfolio(self):
         """
-        Load the portfolio from the portfolio file.
+        Loads the portfolio from a JSON file (portfolio.json)
         :return:
         """
         try:
-            with open(self.portfolio_file) as f:
-                return json.load(f)
+            with open(self.portfolio_file) as file:
+                portfolio = json.load(file)
+            print(f"Portfolio loaded from {self.portfolio_file}")
         except FileNotFoundError:
-            print("portfolio.json file not found.")
-            return []
+            print(f"Couldn't load the portfolio. No such file: {self.portfolio_file}")
+            portfolio = None
+        return portfolio
 
     def check_portfolio(self):
         """
-        Check the portfolio and print the stock actions.
+        Checks the portfolio and prints the stock actions
+        for each stock in the portfolio using the provided stock API instance
         """
         portfolio = self.load_portfolio()
 

@@ -1,1 +1,11 @@
 https://pypi.org/project/yfinance/
+TODO: add all info
+
+
+https://course.algotrading101.com/p/dashboard
+
+TODO:
+
+get all data from yfinance
+another API
+automate scraping current portfolio to JSON (autoexpert (chat) can convert it)
